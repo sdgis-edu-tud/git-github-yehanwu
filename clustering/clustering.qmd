@@ -26,7 +26,7 @@ In the previous session, we introduced the key preparatory steps for typology co
 
 `slope` – mean terrain slope (degrees); related to erosion and stability, may require slope planting or retaining walls.
 
-`crossing` – the number of points where roads or railways cross a stream, calculated per 100 meters of stream length; related to ecological connectivity, may require ecological bridges.
+`crossing` – the number of points where roads or railways cross a stream, divided by stream length; related to ecological connectivity, may require ecological bridges.
 
 -   **Prepare geometries of spatial unit covering focused area**:\
     Read in `grids_TC.gpkg`, with a column `grid_id` created.
@@ -40,7 +40,7 @@ After the above preparatory steps, now we start the clustering process.
 
 We will:\
 Step 1. Load R packages and data\
-Step 2. Standardizations\
+Step 2. Standardization\
 Step 3. Determine optimal k\
 Step 4. Run K-means clustering\
 Step 5. Interpret cluster center\
@@ -58,7 +58,7 @@ If you haven't installed these packages yet, remove the `#` and run the followin
 ```
 
 ::: callout-note
-`#` at the beginning of a line of code will prevent that line from being executed. We use it here because we only need to run `install.packages()` once, when we install a package for the first time. After that we disable that line because we do not need to run it anymore.
+Adding `#` at the beginning of a line of code will prevent that line from being executed. We use it here because we only need to run `install.packages()` once, when we install a package for the first time. After that we disable that line because we do not need to run it anymore.
 :::
 
 Next, load the required packages:
@@ -109,7 +109,7 @@ By default, `plot()` is using equal interval, which might make the differences h
 We select the relevant features. These features are then standardized to ensure they contribute equally to the clustering algorithm.
 
 ```{r}
-features <- grids |>
+features <- grids |> 
   select(impervious, slope, crossing) |>
   st_drop_geometry() # remove geometry column so we just keep a data table
 
@@ -119,6 +119,8 @@ head(X_scaled)
 ```
 
 ::: callout-note
+`|>` passes the result from the left expression to the right function.
+
 Even after selecting variables from an `sf` object, the geometry column is still there. Use `st_drop_geometry()` to remove it before applying functions like `scale()`.
 :::
 
@@ -129,7 +131,7 @@ We use the **elbow method** to choose a good number of clusters.
 For each value of `k` (e.g. 2 to 9), we run K-means and record a value called **inertia** : the total distance between points and their cluster centers. Lower inertia means tighter (better) clusters.
 
 ```{r}
-# Initialize an empty vector to store inertia values 
+# Initialize an empty numeric vector to store inertia values 
 inertia <- numeric()
 
 # Try k values from 2 to 9
@@ -139,7 +141,8 @@ k_values <- 2:9
 for (k in k_values) {
   km <- kmeans(X_scaled, centers = k, nstart = 20) 
   
-  # This measures how compact the clusters are: lower is better
+  # tot.withinss is Total within-cluster sum of squares
+  # This measures how compact the clusters are: lower is better.
   inertia <- c(inertia, km$tot.withinss)
 }
 
@@ -158,7 +161,7 @@ We can visualize how inertia changes with increasing k. After a certain point, a
 ```{r}
 # Make the elbow plot
 plot(k_values, inertia,
-     type = "b",                  # solid circle points
+     type = "b",                  # shown both points + lines 
      col = "darkblue",
      main = "Elbow Method")
 ```
@@ -169,6 +172,7 @@ Based on the elbow plot, we choose `k = 4` as a good number of clusters.\
 We now run the K-means algorithm and assign each grid to one of the four clusters.
 
 ```{r}
+# `set.seed()` sets the random number generator to a fixed state
 # Set the seed so the clustering result is always the same when re-run
 set.seed(0)  # The number 0 is just a fixed choice. You can also use 10, 345, etc.
 
@@ -208,32 +212,31 @@ Now we look at the center of each cluster. First, we check the values in standar
 
 ```{r}
 # Get the cluster centers (in standardized form)
-scaled_centroids <- kmeans_result$centers
+scaled_centers <- kmeans_result$centers
 
 # Print them
 print("Cluster centers (standardized):")
-print(scaled_centroids)
+print(scaled_centers)
 
 # Convert the centers back to original scale: x * SD + mean
-original_centroids <- t(apply(
-  scaled_centroids, 1, 
+original_centers <- t(apply(
+  scaled_centers, 1, 
   function(x) x * attr(X_scaled, "scaled:scale") + attr(X_scaled, "scaled:center")
 ))
 
 # Print the real-world values
 print("Cluster centers (original):")
-print(original_centroids)
-# st_write(grids, "grids_cluster_distance.gpkg")
+print(original_centers)
 
 ```
 
-To interpret the clustering results, we examine the centroids of each cluster in the original data scale. The table below summarizes the environmental characteristics of each cluster based on the original (unscaled) values.
+To interpret the clustering results, we examine the centers of each cluster in the original data scale. The table below summarizes the environmental characteristics of each cluster based on the original (unscaled) values.
 
 ### Typology description
 
 | Type | Impervious | Slope (°) | Crossing | Description |
-|---------------|---------------|---------------|---------------|---------------|
-| 1 | 0.76 | 6.2 | 0.67 | Urban area with high imperviousness and moderate road impact |
+|---------|----------|---------|----------|--------------------|
+| 1 | 0.76 | 6.2 | 0.67 | Urban area with high imperviousness and moderate traffic impact |
 | 2 | 0.07 | 19.4 | 0.29 | Steep natural area with minimal development |
 | 3 | 0.04 | 5.4 | 0.36 | Flat and near-natural stream surroundings |
 | 4 | 0.57 | 6.4 | 3.88 | Urban stream corridor with high crossing disturbance |
@@ -241,7 +244,7 @@ To interpret the clustering results, we examine the centroids of each cluster in
 ## Step 6. (Optional) Calculate distance to cluster center
 
 ```{r}
-## Step 7 (Optional): Compute distance to cluster center
+## Step 6 (Optional): Compute distance to cluster center
 
 # Get the cluster center for each row, using the cluster assignment
 centroids_matrix <- kmeans_result$centers[kmeans_result$cluster, ]
@@ -251,7 +254,7 @@ grid_distances <- sqrt(rowSums((X_scaled - centroids_matrix)^2))
 
 # Save to grids
 grids$cluster_dist <- grid_distances
-
+#st_write(grids, "grids_cluster_distance.gpkg")
 ```
 
 # Summary
@@ -261,7 +264,154 @@ grids$cluster_dist <- grid_distances
 -   We standardized the data to ensure fair clustering.
 -   We used the elbow method to decide the K.
 -   We performed K-means clustering to identify distinct urban stream types.
--   We analyzed and interpreted each cluster using centroids.
+-   We analyzed and interpreted each cluster using cluster centers.
 -   (Optional) We calculated how close each grid is to its cluster center.
 
-This workflow can now be applied to your own dataset to explore meaningful typologies for planning and design. Enjoy clustering!
+This workflow can now be applied to your own datasets to explore meaningful typologies for planning and design. Enjoy clustering!
+
+# Appendix
+
+### A1. Formula of crossing
+
+`crossing` – the number of points where roads or railways cross a stream, divided by stream length (m), multiplied by 100; related to ecological connectivity, may require ecological bridges.
+
+$$
+\text{crossing} = \frac{crossing Count}{stream Length (m)} \times 100
+$$
+
+### A2. Difference between standardization and normalization
+
+There are two common methods of scaling:
+
+#### Standardization (Z-score Scaling)
+
+$$
+x' = \frac{x - \mu}{\sigma}
+$$
+
+-   `𝜇` is the mean, and `𝜎` is the standard deviation.
+-   Centers the data around 0 with a standard deviation of 1.
+-   Keeps the original distribution shape.
+
+#### Normalization (Min-Max Scaling)
+
+$$
+x' = \frac{x - x_{\text{min}}}{x_{\text{max}} - x_{\text{min}}}
+$$
+
+-   Rescales the values to the range \[0, 1\].
+-   Sensitive to outliers.
+
+### A3. Visualize variable distributions in histogram
+
+```{r}
+
+# calculate nornalization
+normalize <- function(x) (x - min(x)) / (max(x) - min(x))
+features_norm <- as.data.frame(lapply(features, normalize))
+
+# set canvas
+par(mfrow = c(3, 3), mar = c(4, 4, 2, 1))
+
+# original raw data
+hist(features$impervious,
+     main = "impervious (original)",
+     xlab = "value", col = "pink")
+
+hist(features$slope,
+     main = "slope (original)",
+     xlab = "value", col = "lightblue")
+
+hist(features$crossing,
+     main = "crossing (original)",
+     xlab = "value", col = "lightyellow")
+
+# standardization z-score
+hist(X_scaled[, "impervious"],
+     main = "impervious (standardized)",
+     xlab = "z-score", col = "red")
+
+hist(X_scaled[, "slope"],
+     main = "slope (standardized)",
+     xlab = "z-score", col = "blue")
+
+hist(X_scaled[, "crossing"],
+     main = "crossing (standardized)",
+     xlab = "z-score", col = "yellow")
+
+# normalization
+hist(features_norm$impervious,
+     main = "impervious (normalized)",
+     xlab = "normalized [0–1]", col = "darkred", xlim = c(0, 1))
+
+hist(features_norm$slope,
+     main = "slope (normalized)",
+     xlab = "normalized [0–1]", col = "darkblue", xlim = c(0, 1))
+
+hist(features_norm$crossing,
+     main = "crossing (normalized)",
+     xlab = "normalized [0–1]", col = "gold", xlim = c(0, 1))
+
+
+```
+
+### A4. K-means Euclidean distance
+
+For a data point **`x`** with 3 variables ( `u, v, w` ),
+
+$$
+\mathbf{x} = (x_u, x_v, x_w)
+$$\
+and a cluster center\
+$$
+\mathbf{c} = (c_u, c_v, c_w),
+$$\
+the Euclidean distance between the point and the cluster center is calculated as:
+
+$$
+\text{Distance} = \sqrt{(x_u - c_u)^2 + (x_v - c_v)^2 + (x_w - c_w)^2}
+$$
+
+In our case:
+
+$$
+\text{Distance} = \sqrt{
+(x_{\text{impervious}} - c_{\text{impervious}})^2 +
+(x_{\text{slope}} - c_{\text{slope}})^2 +
+(x_{\text{crossing}} - c_{\text{crossing}})^2
+}
+$$
+
+### A5. Visualize cluster points in 3D distribution
+
+```{r}
+cluster_colors <- c(
+  "1" = "#65C3A1", 
+  "2" = "#FC9964",  
+  "3" = "#869DC5", 
+  "4" = "#E597C0"   
+)
+
+
+library(plotly)
+
+cluster3d_scaled <- plot_ly(
+  x = X_scaled[, "impervious"],
+  y = X_scaled[, "slope"],
+  z = X_scaled[, "crossing"],
+  type = "scatter3d",
+  mode = "markers",
+  color = as.factor(kmeans_result$cluster),
+  colors = cluster_colors,
+  marker = list(size = 3)
+) %>%
+  layout(
+    scene = list(
+      xaxis = list(title = "impervious"),
+      yaxis = list(title = "slope"),
+      zaxis = list(title = "crossing")
+    )
+  )
+cluster3d_scaled
+
+```
